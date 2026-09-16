@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emerald Tree — Review Approval</title>
+<style>
+body{margin:0;background:#fbf8f1;color:#17231f;font-family:Inter,Arial,sans-serif}
+.wrap{max-width:1000px;margin:auto;padding:30px 18px 70px}
+h1{font:700 42px Georgia;color:#0a3f32}.muted{color:#66736d}
+.card{background:#fff;border:1px solid #e6ebe7;border-radius:16px;padding:20px;margin:14px 0;box-shadow:0 8px 25px #173c3010}
+.stars{color:#d6a84f;font-size:20px}.meta{font-size:13px;color:#66736d}
+button{border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;margin:8px 8px 0 0}
+.approve{background:#0d5c45;color:#fff}.reject{background:#f1dfdf;color:#7b2020}
+input{width:100%;max-width:500px;padding:13px;border:1px solid #d8e1dc;border-radius:9px;font-size:16px;box-sizing:border-box}
+.hidden{display:none}.notice{padding:12px;border-radius:9px;background:#eef6f2;margin:14px 0}
+
+.prices{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+.pricebox{border:1px solid #e6ebe7;border-radius:12px;padding:14px;background:#fbfdfc}
+.pricebox label{display:block;font-weight:800;color:#0a3f32;margin-bottom:7px}
+.pricebox input{max-width:none}
+@media(max-width:700px){.prices{grid-template-columns:1fr}}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" class="muted">← Back to website</a>
+  <h1>Guest Feedback Approval</h1>
+  <p class="muted">Only approve feedback you have reviewed. Approved feedback becomes public on the Emerald Tree website.</p>
+  <div id="login">
+    <input id="token" type="password" placeholder="Enter staff review token">
+    <button class="approve" id="loginBtn">Open Reviews</button>
+    <div id="loginMsg" class="muted"></div>
+  </div>
+  <div id="app" class="hidden">
+    <div id="message" class="notice"></div>
+
+    <div class="card">
+      <h2 style="font:700 28px Georgia;color:#0a3f32">💰 Room Prices</h2>
+      <p class="muted">Change these values here and the live website will use them automatically.</p>
+      <div class="prices">
+        <div class="pricebox"><label for="pStandard">Standard (₹)</label><input id="pStandard" type="number" min="0"></div>
+        <div class="pricebox"><label for="pDeluxe">Deluxe (₹)</label><input id="pDeluxe" type="number" min="0"></div>
+        <div class="pricebox"><label for="pExecutive">Executive (₹)</label><input id="pExecutive" type="number" min="0"></div>
+      </div>
+      <button class="approve" id="savePrices">Save Price Changes</button>
+      <span id="priceMsg" class="muted"></span>
+    </div>
+
+    <div id="reviews"></div>
+  </div>
+</div>
+<script>
+let token="";
+const esc=v=>String(v??"").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[s]));
+const stars=n=>"★".repeat(Number(n))+"☆".repeat(5-Number(n));
+async function load(){
+  const r=await fetch("/.netlify/functions/reviews?admin=1",{headers:{"x-admin-token":token}});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error||"Unauthorized");
+  const all=d.reviews||[];
+  document.getElementById("reviews").innerHTML=all.length?all.map(x=>`
+    <article class="card">
+      <div class="stars">${stars(x.rating)}</div>
+      <h3>${esc(x.name)}</h3>
+      <div class="meta">${esc(x.status)} • ${new Date(x.createdAt).toLocaleString()}</div>
+      <p>${esc(x.text)}</p>
+      ${x.status==="pending"?`<button class="approve" onclick="act('${esc(x.id)}','approve')">Approve</button><button class="reject" onclick="act('${esc(x.id)}','reject')">Reject</button>`:`<button class="reject" onclick="act('${esc(x.id)}','delete')">Remove</button>`}
+    </article>`).join(""):'<p class="muted">No reviews yet.</p>';
+}
+async function act(id,action){
+  const r=await fetch("/.netlify/functions/reviews",{method:"PATCH",headers:{"Content-Type":"application/json","x-admin-token":token},body:JSON.stringify({id,action})});
+  if(!r.ok){alert("Action failed.");return}
+  load();
+}
+document.getElementById("loginBtn").onclick=async()=>{
+  token=document.getElementById("token").value.trim();
+  try{await load();await loadPrices();document.getElementById("login").classList.add("hidden");document.getElementById("app").classList.remove("hidden")}
+  catch(e){document.getElementById("loginMsg").textContent="Access denied. Check the staff token."}
+};
+
+async function loadPrices(){
+  const r=await fetch("/.netlify/functions/prices");
+  const d=await r.json();
+  if(!r.ok) throw new Error(d.error||"Unable to load prices");
+  document.getElementById("pStandard").value=d.prices.standard;
+  document.getElementById("pDeluxe").value=d.prices.deluxe;
+  document.getElementById("pExecutive").value=d.prices.executive;
+}
+async function savePrices(){
+  const body={
+    standard:Number(document.getElementById("pStandard").value),
+    deluxe:Number(document.getElementById("pDeluxe").value),
+    executive:Number(document.getElementById("pExecutive").value)
+  };
+  const r=await fetch("/.netlify/functions/prices",{method:"PATCH",headers:{"Content-Type":"application/json","x-admin-token":token},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({}));
+  const m=document.getElementById("priceMsg");
+  if(!r.ok){m.textContent=d.error||"Could not save prices.";return}
+  m.textContent=" Saved! The live website will now use these prices.";
+}
+
+document.getElementById('savePrices').onclick=savePrices;
+</script>
+</body>
+</html>
