@@ -2,18 +2,10 @@ import { getStore } from "@netlify/blobs";
 
 const STORE = "emerald-tree-reviews";
 
-const PRICE_KEY = "room-prices";
-const DEFAULT_PRICES = { standard: 1499, deluxe: 1999, executive: 2499 };
-
-
-
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store"
-    }
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
   });
 }
 
@@ -22,21 +14,17 @@ function cleanText(value, max) {
 }
 
 function adminOk(req) {
-  const token = process.env.REVIEWS_ADMIN_TOKEN;
-  if (!token) return false;
-  const supplied = req.headers.get("x-admin-token") || "";
-  return supplied === token;
+  const expected = String(process.env.REVIEWS_ADMIN_TOKEN ?? "").trim();
+  if (!expected) return false;
+  const bearer = req.headers.get("authorization") || "";
+  const supplied = bearer.toLowerCase().startsWith("bearer ")
+    ? bearer.slice(7).trim()
+    : (req.headers.get("x-admin-token") || "").trim();
+  return supplied === expected;
 }
 
 export default async (req) => {
   const store = getStore(STORE);
-
-
-  if (req.method === "GET" && new URL(req.url).pathname.endsWith("/prices")) {
-    let prices = await store.get(PRICE_KEY, { type: "json" });
-    if (!prices) prices = DEFAULT_PRICES;
-    return json({ prices });
-  }
 
   if (req.method === "GET") {
     const url = new URL(req.url);
@@ -77,35 +65,9 @@ export default async (req) => {
     }
 
     const id = `${Date.now()}-${crypto.randomUUID()}`;
-    const review = {
-      id,
-      name,
-      text,
-      rating,
-      status: "pending",
-      createdAt: new Date().toISOString()
-    };
-
+    const review = { id, name, text, rating, status: "pending", createdAt: new Date().toISOString() };
     await store.setJSON(`review-${id}`, review);
     return json({ ok: true, message: "Feedback submitted for approval." }, 201);
-  }
-
-
-  if (req.method === "PATCH" && new URL(req.url).pathname.endsWith("/prices")) {
-    if (!adminOk(req)) return json({ error: "Unauthorized" }, 401);
-    let body;
-    try { body = await req.json(); } catch { return json({ error: "Invalid request." }, 400); }
-    const keys = ["standard","deluxe","executive"];
-    const prices = {};
-    for (const key of keys) {
-      const value = Number(body[key]);
-      if (!Number.isFinite(value) || value < 0 || value > 1000000) {
-        return json({ error: "Please enter valid room prices." }, 400);
-      }
-      prices[key] = Math.round(value);
-    }
-    await store.setJSON(PRICE_KEY, prices);
-    return json({ ok: true, prices });
   }
 
   if (req.method === "PATCH") {
